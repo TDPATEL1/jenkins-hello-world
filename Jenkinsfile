@@ -8,6 +8,15 @@ pipeline {
             }
         }
 
+        stage('Install GCC') {
+            steps {
+                sh '''
+                    apt-get update
+                    apt-get install -y build-essential
+                '''
+            }
+        }
+
         stage('Compile C Program') {
             steps {
                 sh 'gcc hello.c -o hello'
