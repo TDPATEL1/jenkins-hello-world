@@ -1,3 +1,4 @@
+
 pipeline {
     agent any
 
@@ -8,12 +9,9 @@ pipeline {
             }
         }
 
-        stage('Install GCC') {
+        stage('Check GCC') {
             steps {
-                sh '''
-                    apt-get update
-                    apt-get install -y build-essential
-                '''
+                sh 'gcc --version'
             }
         }
 
