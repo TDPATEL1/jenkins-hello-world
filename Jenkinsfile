@@ -1,4 +1,3 @@
-
 pipeline {
     agent any
 
@@ -24,6 +23,14 @@ pipeline {
         stage('Run Hello World') {
             steps {
                 sh './hello'
+            }
+        }
+
+        stage('Package Artifact') {
+            steps {
+                echo 'Packaging C executable'
+                sh 'tar -czf hello-world-c.tar.gz hello'
+                sh 'ls -lh hello-world-c.tar.gz'
             }
         }
 
