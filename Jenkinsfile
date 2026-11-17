@@ -6,23 +6,27 @@ pipeline {
         ARTIFACTORY_URL = 'http://artifactory:8082/artifactory'
         REPO = 'jenkins-artifacts'
         VERSION = '1.0.0.3'
+        GIT_REPO_NAME = 'Jenkins-hello-world'
     }
 
     stages {
+
         stage('Build Metadata') {
             steps {
                 script {
-                    // Get build timestamp in Indian Standard Time
+                    // Generate build timestamp in IST
                     env.BUILD_TIMESTAMP = sh(
                         script: "TZ=Asia/Kolkata date '+%Y.%m.%d_%H.%M'",
                         returnStdout: true
                     ).trim()
 
-                    // Get first seven characters of commit hash
-                    env.COMMIT_SHORT = sh(
-                        script: 'git rev-parse HEAD | cut -c1-7',
+                    // Get full and short commit hash
+                    env.COMMIT_FULL = sh(
+                        script: 'git rev-parse HEAD',
                         returnStdout: true
                     ).trim()
+
+                    env.COMMIT_SHORT = env.COMMIT_FULL.take(7)
 
                     // Identify branch or Pull Request
                     if (env.CHANGE_ID) {
@@ -35,15 +39,19 @@ pipeline {
                         error("Unsupported branch: ${env.BRANCH_NAME}")
                     }
 
-                    // Generate final artifact name
+                    // Generate artifact names
                     env.ARTIFACT_NAME =
                         "${env.VERSION}_${env.BUILD_TYPE}_${env.BUILD_TIMESTAMP}_${env.COMMIT_SHORT}"
 
+                    env.ZIP_NAME = "${env.ARTIFACT_NAME}.zip"
+
                     echo "Branch: ${env.BRANCH_NAME}"
                     echo "Build Type: ${env.BUILD_TYPE}"
-                    echo "Commit: ${env.COMMIT_SHORT}"
+                    echo "Full Commit: ${env.COMMIT_FULL}"
+                    echo "Short Commit: ${env.COMMIT_SHORT}"
                     echo "Timestamp: ${env.BUILD_TIMESTAMP}"
                     echo "Artifact: ${env.ARTIFACT_NAME}"
+                    echo "ZIP: ${env.ZIP_NAME}"
                     echo "Folder: ${env.ARTIFACT_FOLDER}"
                 }
             }
@@ -67,6 +75,43 @@ pipeline {
             }
         }
 
+        stage('Prepare Artifact Package') {
+            steps {
+                sh '''
+                    set -eu
+
+                    # Create a clean packaging directory
+                    rm -rf package
+                    mkdir -p package
+
+                    # Rename executable using artifact name
+                    cp a.out "package/$ARTIFACT_NAME"
+
+                    # Generate manifest.json
+                    cat > package/manifest.json <<EOF
+{
+    "timestamp": "$BUILD_TIMESTAMP",
+    "$GIT_REPO_NAME": {
+        "commit": "$COMMIT_FULL"
+    }
+}
+EOF
+
+                    # Validate JSON structure
+                    python3 -m json.tool package/manifest.json > /dev/null
+
+                    # Create ZIP containing exactly two files
+                    cd package
+                    jar --create --file "../$ZIP_NAME" "$ARTIFACT_NAME" manifest.json
+                    cd ..
+
+                    echo "ZIP package created: $ZIP_NAME"
+                    echo "Package contents:"
+                    jar --list --file "$ZIP_NAME"
+                '''
+            }
+        }
+
         stage('Upload to Artifactory') {
             steps {
                 withCredentials([
@@ -77,10 +122,14 @@ pipeline {
                     )
                 ]) {
                     sh '''
+                        set -eu
+
                         curl --fail --silent --show-error \
                           -u "$ART_USER:$ART_PASS" \
-                          -T a.out \
-                          "$ARTIFACTORY_URL/$REPO/$ARTIFACT_FOLDER/$ARTIFACT_NAME"
+                          -T "$ZIP_NAME" \
+                          "$ARTIFACTORY_URL/$REPO/$ARTIFACT_FOLDER/$ZIP_NAME"
+
+                        echo "ZIP uploaded successfully!"
                     '''
                 }
             }
@@ -89,8 +138,17 @@ pipeline {
         stage('Success') {
             steps {
                 echo "Build completed successfully!"
-                echo "Uploaded: ${env.ARTIFACT_FOLDER}/${env.ARTIFACT_NAME}"
+                echo "Uploaded ZIP: ${env.ARTIFACT_FOLDER}/${env.ZIP_NAME}"
+                echo "Executable: ${env.ARTIFACT_NAME}"
+                echo "Manifest: manifest.json"
+                echo "Full Commit: ${env.COMMIT_FULL}"
             }
+        }
+    }
+
+    post {
+        always {
+            echo "Jenkins build finished: ${currentBuild.currentResult}"
         }
     }
 }
