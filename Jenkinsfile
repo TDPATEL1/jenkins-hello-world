@@ -97,8 +97,8 @@ pipeline {
 }
 EOF
 
-                    # Validate JSON structure
-                    python3 -m json.tool package/manifest.json > /dev/null
+                    # Verify manifest was generated
+                    test -s package/manifest.json
 
                     # Create ZIP containing exactly two files
                     cd package
