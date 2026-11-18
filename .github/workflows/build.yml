@@ -1,0 +1,28 @@
+
+name: C Build Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Check GCC
+        run: gcc --version
+
+      - name: Compile C Program
+        run: gcc -Wall -Wextra hello.c -o hello
+
+      - name: Run Hello World
+        run: ./hello
+
+      - name: Build Success
+        run: echo "GitHub Actions build completed successfully!"
