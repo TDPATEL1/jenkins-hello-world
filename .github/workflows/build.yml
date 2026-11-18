@@ -11,18 +11,114 @@ jobs:
   build:
     runs-on: self-hosted
 
+    env:
+      JFROG_URL: ${{ secrets.JFROG_URL }}
+      JFROG_TOKEN: ${{ secrets.JFROG_TOKEN }}
+      REPO: jenkins-artifacts
+      VERSION: 1.0.0.3
+      GIT_REPO_NAME: Jenkins-hello-world
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Build Metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BUILD_TIMESTAMP=$(TZ=Asia/Kolkata date '+%Y.%m.%d_%H.%M')
+          COMMIT_FULL=$(git rev-parse HEAD)
+          COMMIT_SHORT=${COMMIT_FULL:0:7}
+
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            ARTIFACT_FOLDER="PR"
+            BUILD_TYPE="PR-${{ github.event.pull_request.number }}"
+          elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            ARTIFACT_FOLDER="master"
+            BUILD_TYPE="master"
+          else
+            echo "Unsupported branch: ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+
+          ARTIFACT_NAME="${VERSION}_${BUILD_TYPE}_${BUILD_TIMESTAMP}_${COMMIT_SHORT}"
+          ZIP_NAME="${ARTIFACT_NAME}.zip"
+
+          {
+            echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP"
+            echo "COMMIT_FULL=$COMMIT_FULL"
+            echo "COMMIT_SHORT=$COMMIT_SHORT"
+            echo "ARTIFACT_FOLDER=$ARTIFACT_FOLDER"
+            echo "BUILD_TYPE=$BUILD_TYPE"
+            echo "ARTIFACT_NAME=$ARTIFACT_NAME"
+            echo "ZIP_NAME=$ZIP_NAME"
+          } >> "$GITHUB_ENV"
+
+          echo "Build Type: $BUILD_TYPE"
+          echo "Timestamp: $BUILD_TIMESTAMP"
+          echo "Commit: $COMMIT_FULL"
+          echo "Artifact: $ARTIFACT_NAME"
 
       - name: Check GCC
         run: gcc --version
 
       - name: Compile C Program
-        run: gcc -Wall -Wextra hello.c -o hello
+        run: gcc -Wall -Wextra hello.c -o a.out
 
       - name: Run Hello World
-        run: ./hello
+        run: ./a.out
+
+      - name: Prepare Artifact Package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf package
+          mkdir -p package
+
+          cp a.out "package/$ARTIFACT_NAME"
+
+          cat > package/manifest.json <<EOF
+          {
+            "timestamp": "$BUILD_TIMESTAMP",
+            "$GIT_REPO_NAME": {
+              "commit": "$COMMIT_FULL"
+            }
+          }
+          EOF
+
+          test -s package/manifest.json
+
+          python3 -c '
+          import os
+          import zipfile
+
+          with zipfile.ZipFile(os.environ["ZIP_NAME"], "w",
+                               compression=zipfile.ZIP_DEFLATED) as z:
+              z.write("package/" + os.environ["ARTIFACT_NAME"],
+                      os.environ["ARTIFACT_NAME"])
+              z.write("package/manifest.json", "manifest.json")
+          '
+
+          echo "ZIP created: $ZIP_NAME"
+          unzip -l "$ZIP_NAME"
+
+      - name: Upload to Artifactory
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          UPLOAD_URL="${JFROG_URL%/}/artifactory/${REPO}/${ARTIFACT_FOLDER}/${ZIP_NAME}"
+
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${JFROG_TOKEN}" \
+            -T "$ZIP_NAME" \
+            "$UPLOAD_URL"
+
+          echo "ZIP uploaded successfully!"
+          echo "Uploaded path: ${REPO}/${ARTIFACT_FOLDER}/${ZIP_NAME}"
 
       - name: Build Success
-        run: echo "GitHub Actions build completed successfully!"
+        run: echo "GitHub Actions build and JFrog upload completed successfully!"
+
