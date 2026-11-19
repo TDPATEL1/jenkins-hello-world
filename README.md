@@ -2442,4 +2442,279 @@ https://github.com/TDPATEL1/jenkins-hello-world
 - PowerShell
 - Gmail SMTP
 
+
+
+
+
+# GitHub Actions CI/CD Pipeline with Self-Hosted Runner and JFrog Artifactory
+
+## 1. Project Overview
+
+This project implements an automated CI/CD pipeline using **GitHub Actions, a Self-Hosted Runner, GCC, and JFrog Artifactory**.
+
+Whenever code is pushed to the `main` branch or a Pull Request is created, GitHub Actions automatically triggers the workflow.
+
+The workflow compiles the C program, executes it, generates build metadata, packages the executable into a ZIP archive, and uploads the artifact to JFrog Artifactory.
+
+## 2. Architecture
+
+```text
+Developer
+    |
+    | Git Push / Pull Request
+    v
+GitHub Repository
+    |
+    v
+GitHub Actions
+    |
+    v
+Self-Hosted Runner (Ubuntu / WSL)
+    |
+    +---- Checkout Source Code
+    |
+    +---- Check GCC
+    |
+    +---- Compile C Program
+    |         |
+    |         v
+    |       a.out
+    |
+    +---- Execute C Program
+    |
+    +---- Generate Build Metadata
+    |         |
+    |         +---- IST Timestamp
+    |         +---- Git Commit Hash
+    |         +---- Branch / PR Number
+    |
+    +---- Prepare ZIP Artifact
+    |         |
+    |         +---- Executable
+    |         +---- manifest.json
+    |
+    v
+JFrog Artifactory
+    |
+    +---- master/
+    |
+    +---- PR/
+```
+
+## 3. Technologies Used
+
+| Technology | Purpose |
+|---|---|
+| GitHub | Source code management |
+| GitHub Actions | CI/CD automation |
+| Ubuntu 24.04 (WSL) | Runner environment |
+| Self-Hosted Runner | Executes workflow jobs |
+| GCC | Compiles C program |
+| Bash | Build automation |
+| Python 3 | ZIP packaging |
+| Unzip | ZIP archive verification |
+| JFrog Artifactory | Artifact storage |
+
+## 4. Self-Hosted Runner Setup
+
+A GitHub Actions self-hosted runner was configured on the local Ubuntu environment running through WSL.
+
+The runner allows GitHub Actions to execute jobs on the local machine instead of using GitHub-hosted runners.
+
+Runner environment:
+
+- Operating System: Ubuntu 24.04
+- Architecture: Linux x64
+- Shell: Bash
+- Compiler: GCC
+- Python 3
+- ZIP verification utility: Unzip
+
+## 5. Workflow Configuration
+
+Workflow file location:
+
+```text
+.github/workflows/build.yml
+```
+
+The workflow is triggered by:
+
+```yaml
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+```
+
+This enables automatic builds when:
+- Code is pushed to `main`.
+- A Pull Request is opened or updated.
+
+## 6. Build Pipeline Stages
+
+### Stage 1: Checkout Repository
+
+Uses `actions/checkout@v4` to retrieve the source code.
+
+### Stage 2: Build Metadata
+
+Generates the following information:
+
+- Build timestamp in Indian Standard Time (IST).
+- Full Git commit hash.
+- First seven characters of the commit hash.
+- Branch type or Pull Request number.
+- Final artifact name.
+
+### Stage 3: Check GCC
+
+Verifies that GCC is installed and available on the runner.
+
+```bash
+gcc --version
+```
+
+### Stage 4: Compile C Program
+
+Compiles the C source file:
+
+```bash
+gcc -Wall -Wextra hello.c -o a.out
+```
+
+### Stage 5: Run Hello World
+
+Executes the compiled program:
+
+```bash
+./a.out
+```
+
+### Stage 6: Prepare Artifact Package
+
+Creates a ZIP archive containing:
+
+1. Compiled executable.
+2. `manifest.json` containing build metadata.
+
+Example:
+
+```json
+{
+  "timestamp": "2026.11.18_15.44",
+  "Jenkins-hello-world": {
+    "commit": "44a6b9f..."
+  }
+}
+```
+
+### Stage 7: Upload to JFrog Artifactory
+
+Uses the JFrog REST API and Bearer Token authentication to upload the generated ZIP archive.
+
+The following GitHub repository secrets are configured:
+
+| Secret | Description |
+|---|---|
+| `JFROG_URL` | JFrog Artifactory base URL |
+| `JFROG_TOKEN` | Authentication token |
+
+Credentials are stored in GitHub Secrets and are not hardcoded into the workflow.
+
+## 7. Artifact Naming Convention
+
+Artifacts follow this naming convention:
+
+```text
+1.0.0.3_<BUILD_TYPE>_<IST_TIMESTAMP>_<COMMIT_HASH>.zip
+```
+
+Examples:
+
+**Main branch:**
+
+```text
+1.0.0.3_master_2026.11.18_15.44_44a6b9f.zip
+```
+
+**Pull Request:**
+
+```text
+1.0.0.3_PR-12_2026.11.18_15.44_44a6b9f.zip
+```
+
+## 8. JFrog Repository Structure
+
+Artifacts are uploaded to the `jenkins-artifacts` local repository.
+
+```text
+jenkins-artifacts/
+|
++---- master/
+|       |
+|       +---- 1.0.0.3_master_<timestamp>_<commit>.zip
+|
++---- PR/
+        |
+        +---- 1.0.0.3_PR-<number>_<timestamp>_<commit>.zip
+```
+
+This separates main branch builds from Pull Request builds.
+
+## 9. Security
+
+- JFrog authentication uses a Bearer Token.
+- Credentials are stored as GitHub Actions Secrets.
+- No authentication tokens are hardcoded in the workflow.
+- The self-hosted runner executes the build locally.
+
+## 10. How to Run
+
+### Push to Main
+
+```bash
+git add .
+git commit -m "Update C application"
+git push origin main
+```
+
+GitHub Actions automatically starts the build.
+
+### Pull Request
+
+Create and push a feature branch:
+
+```bash
+git checkout -b feature/test-build
+git push origin feature/test-build
+```
+
+Open a Pull Request against `main`.
+
+The workflow automatically executes the PR build.
+
+## 11. Verification
+
+Check the following:
+
+1. GitHub Actions workflow completes successfully.
+2. GCC compiles the C program without errors.
+3. The executable runs successfully.
+4. ZIP archive is generated.
+5. ZIP contains the executable and `manifest.json`.
+6. JFrog Artifactory receives the uploaded artifact in the correct folder.
+
+## 12. Expected Outcome
+
+The implementation provides an automated C build and artifact management process.
+
+Every supported main branch push and Pull Request build generates a uniquely named ZIP artifact containing the executable and build metadata, and stores it in the appropriate JFrog Artifactory folder.
+
+---
+
+**Project:** Jenkins Hello World – GitHub Actions CI/CD Integration  
+**Repository:** https://github.com/TDPATEL1/jenkins-hello-world
+
 **End of Setup Guide**
